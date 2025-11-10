@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Трейдинг Журнал</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; max-width: 1400px; margin: auto; background-color: #f8f9fa; }
+        form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; background-color: #fff; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background-color: #fff; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
+        th { background-color: #f1f3f5; }
+        button { cursor: pointer; padding: 8px 12px; border-radius: 6px; border: none; font-weight: 500; }
+        button[type="submit"] { background-color: #007bff; color: white; grid-column: 1 / -1; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .filters { margin-bottom: 20px; }
+        .filters button { background-color: #e9ecef; color: #343a40; margin-right: 5px; }
+        .filters button.active { background-color: #007bff; color: white; }
+        .delete-btn { background-color: #dc3545; color: white; }
+
+        .modal-content button.selected-close {
+            background-color: #28a745;
+            color: white;
+            border: 2px solid #1e7e34;
+        }
+        .trade-long { color: #28a745; font-weight: 600; }
+        .trade-short { color: #dc3545; font-weight: 600; }
+
+        .main-content { display: flex; flex-wrap: wrap; gap: 20px; }
+        .tables-column { flex: 2; min-width: 450px; }
+        .stats-column { flex: 1; min-width: 300px; }
+        .chart-container { background: #fff; padding: 10px; border-radius: 8px; }
+        
+        @media (max-width: 768px) {
+            body { margin: 10px; }
+            form { grid-template-columns: 1fr; }
+            .modal-content { width: 90%; margin: auto; }
+            .tables-column, .stats-column { min-width: 100%; }
+            table { display: block; overflow-x: auto; white-space: nowrap; }
+        }
+    </style>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    
+</head>
+<body>
+
+    <h1>Мій Трейдинг Журнал</h1>
+
+    <h2>Додати новий трейд</h2>
+    <form id="add-trade-form">
+        <label>Акронім монети: <input type="text" id="acronym" required style="width: 100%;"></label>
+        <label>Тип позиції:
+            <select id="trade-type" style="width: 100%; padding: 5px;">
+                <option value="long">Long</option>
+                <option value="short">Short</option>
+            </select>
+        </label>
+        <label>Час: <input type="datetime-local" id="time" required style="width: 100%;"></label>
+        <label>Точка входу: <input type="number" step="any" id="entry" required style="width: 100%;"></label>
+        <label>Стоп Лос: <input type="number" step="any" id="stopLoss" required style="width: 100%;"></label>
+        <label>Тейк Профіт: <input type="number" step="any" id="takeProfit" required style="width: 100%;"></label>
+        <label style="grid-column: 1 / -1;">Причина сетапу: <input type="text" id="reason" required style="width: 100%;"></label>
+        <input type="hidden" id="status" value="active">
+        <button type="submit">Додати трейд</button>
+    </form>
+
+    <hr style="border: none; border-top: 1px solid #dee2e6; margin: 25px 0;">
+
+    <div class="filters" id="global-filter">
+        <strong>Фільтр:</strong>
+        <button data-filter="week">Цей тиждень</button>
+        <button data-filter="month">Цей місяць</button>
+        <button data-filter="all" class="active">Весь час</button>
+    </div>
+
+    <div class="main-content">
+        
+        <div class="tables-column">
+            <h2>Активні трейди</h2>
+            <table id="active-trades-table">
+                <thead>
+                    <tr>
+                        <th>Монета</th>
+                        <th>Тип</th>
+                        <th>Час</th>
+                        <th>Вхід</th>
+                        <th>Стоп</th>
+                        <th>Тейк</th>
+                        <th>Причина</th>
+                        <th>Дії</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+
+            <h2>Закриті трейди</h2>
+            <table id="past-trades-table">
+                <thead>
+                    <tr>
+                        <th>Монета</th>
+                        <th>Тип</th>
+                        <th>Час</th>
+                        <th>Вхід</th>
+                        <th>Статус</th>
+                        <th>P/L (%)</th>
+                        <th>Причина успіху/провалу</th>
+                        <th>Що можна було зробити краще</th>
+                        <th>Дії</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="stats-column">
+            <h2>Статистика</h2>
+            <div class="chart-container">
+                <canvas id="statsChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="close-modal" class="modal">
+        <div class="modal-content">
+            <h3>Закриття позиції</h3>
+            <p>Як закрито позицію?</p>
+            <button id="close-by-tp">По Тейк Профіту</button>
+            <button id="close-by-sl">По Стоп Лосу</button>
+            <hr>
+            <label>Причина успіху/провалу:</label>
+            <textarea id="close-reason" style="width: 95%; height: 60px;"></textarea>
+            <label>Що можна було зробити краще:</label>
+            <textarea id="close-better" style="width: 95%; height: 60px;"></textarea>
+            <br><br>
+            <button id="confirm-close" style="background-color: #28a745; color: white;">Зберегти закриття</button>
+            <button id="cancel-close" style="background-color: #6c757d; color: white; margin-left: 10px;">Скасувати</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
